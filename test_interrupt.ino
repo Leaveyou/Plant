@@ -51,10 +51,16 @@ void loop() {
         Serial.println("Arduino has rebooted");
     }
 
-    if (DS3231_triggered_a2()) {
+
+    char buff[BUFF_MAX];
+    DS3231_get_a2(&buff[0], 59);
+    if (buff[0] == 0x00 || DS3231_triggered_a2() )
+    {
         Serial.println("No  alarm set. Setting a new one");
         interrupt_routine();
-    } else {
+
+    }
+    else {
         Serial.println("Alarm already set.");
     }
 
@@ -93,3 +99,4 @@ void set_timer(time_interval timeInterval) {
 void blink() {
     // do nothing. Just wakes up arduino
 }
+
