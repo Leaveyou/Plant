@@ -51,7 +51,7 @@ void loop() {
         Serial.println("Arduino has rebooted");
     }
 
-
+    // todo: sqw needs external pullup resistor. this means no alarm can function without external power. DS3231_triggered_a2 might be enough. TBD
     char buff[BUFF_MAX];
     DS3231_get_a2(&buff[0], 59);
     if (buff[0] == 0x00 || DS3231_triggered_a2() )
