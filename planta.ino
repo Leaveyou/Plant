@@ -3,20 +3,20 @@
 #include <ds3231.h>
 
 #define BUFF_MAX 256
-#define HOUR_INTERVAL 0
-#define MINUTE_INTERVAL 1
 
+#define HOUR_INTERVAL 0
+#define MINUTE_INTERVAL 0
+#define SECOND_INTERVAL 5
 
 const byte interruptPin = 2;
 volatile byte state = LOW;
 int awakePin = 13;
 struct ts t;
-uint8_t sleep_period = 1;       // the sleep interval in minutes between 2 consecutive alarms
 
 typedef struct time_interval {
     uint8_t hours;
     uint8_t minutes;
-
+    uint8_t seconds;
 } time_interval;
 
 
@@ -30,37 +30,33 @@ void setup() {
     //interrupt_routine();  // delete me
 }
 
-void interrupt_routine(){
+void interrupt_routine() {
     DS3231_get(&t);
-
     time_interval timeInterval;
     timeInterval.hours = HOUR_INTERVAL;
     timeInterval.minutes = MINUTE_INTERVAL;
-
+    timeInterval.seconds = SECOND_INTERVAL;
     set_timer(timeInterval);
 }
 
 void loop() {
     digitalWrite(awakePin, HIGH);
     delay(100);
-    if(digitalRead(interruptPin) == LOW) {
+    if (digitalRead(interruptPin) == LOW) {
         Serial.println("Alarm is ringing.");
         interrupt_routine();
-    }
-    else{
+    } else {
         Serial.println("Arduino has rebooted");
     }
 
-    // todo: sqw needs external pullup resistor. this means no alarm can function without external power. DS3231_triggered_a2 might be enough. TBD
+    // todo: sqw needs external pull-up resistor. This means no alarm can function without external power. DS3231_triggered_a1 might be enough. TBD
     char buff[BUFF_MAX];
-    DS3231_get_a2(&buff[0], 59);
-    if (buff[0] == 0x00 || DS3231_triggered_a2() )
-    {
+    DS3231_get_a1(&buff[0], 59);
+    if (buff[0] == 0x00 || DS3231_triggered_a1()) {
         Serial.println("No  alarm set. Setting a new one");
         interrupt_routine();
 
-    }
-    else {
+    } else {
         Serial.println("Alarm already set.");
     }
 
@@ -70,29 +66,47 @@ void loop() {
 
 }
 
-void set_timer(time_interval timeInterval) {
+void set_timer(time_interval timeInterval)
+{
     struct ts t;
 
     DS3231_get(&t);
 
     // calculate the hour and minute when the next alarm will be triggered
 
-    unsigned char wakeup_minute = (t.min + timeInterval.minutes) % 60;
-    unsigned char wakeup_hour = ((t.hour + timeInterval.hours) + (t.min + timeInterval.minutes) / 60) % 24;
+    unsigned char wakeup_second = t.sec + timeInterval.seconds;
+    unsigned char wakeup_minute = t.min + timeInterval.minutes;
+    unsigned char wakeup_hour = t.hour + timeInterval.hours;
 
+    if (wakeup_second >= 60 ) {
+        wakeup_minute += wakeup_second / 60;
+        wakeup_second %=60;
+    }
+
+    if (wakeup_minute >= 60 ) {
+        wakeup_hour += wakeup_minute / 60;
+        wakeup_minute %=60;
+    }
+
+    if (wakeup_hour >= 60 ) {
+        wakeup_hour %= 24;
+    }
+
+    DS3231_clear_a1f();
     DS3231_clear_a2f();
 
     // flags define what calendar component to be checked against the current time in order
     // to trigger the alarm
-    // A2M2 (minutes) (0 to enable, 1 to disable)
-    // A2M3 (hour)    (0 to enable, 1 to disable)
-    // A2M4 (day)     (0 to enable, 1 to disable)
+    // (seconds) (0 to enable, 1 to disable)
+    // (minutes) (0 to enable, 1 to disable)
+    // (hour)    (0 to enable, 1 to disable)
+    // (day)     (0 to enable, 1 to disable)
     // DY/DT          (dayofweek == 1/dayofmonth == 0)
-    uint8_t flags[4] = {0, 0, 1, 1};
-    DS3231_set_a2(wakeup_minute, wakeup_hour, 0, flags);
+    uint8_t flags[5] = {0, 0, 0, 1, 1};
+    DS3231_set_a1(wakeup_second, wakeup_minute, wakeup_hour, 0, flags);
 
     // activate Alarm2
-    DS3231_set_creg(DS3231_CONTROL_INTCN | DS3231_CONTROL_A2IE);
+    DS3231_set_creg(DS3231_CONTROL_INTCN | DS3231_CONTROL_A1IE);
 }
 
 
