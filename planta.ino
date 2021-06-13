@@ -4,7 +4,7 @@
 #include <EEPROM.h>
 
 #define AWAKE_PIN 13  // Powers peripherials. set via [un]unpower_peripherials() function
-#define EEPROM_DATA_VERSION 4 // increment this every type you make changes to the eeprom structure
+#define EEPROM_DATA_VERSION 2 // increment this every type you make changes to the eeprom structure
 
 // store settings on eeprom 
 typedef struct settings {
@@ -152,7 +152,9 @@ settings GetCurrentSettings()
 
 void FlashEEPROM(settings system_settings)
 {
-    Serial.println("Flashing EEPROM for version %d... ", EEPROM_DATA_VERSION);
+    Serial.println("");
+
+    Serial.print("Flashing EEPROM... ");
     check default_check;
     EEPROM.put(0, system_settings);    
 
@@ -160,8 +162,7 @@ void FlashEEPROM(settings system_settings)
     {
         size_t check_address = sizeof(system_settings) + i*sizeof(check);
         EEPROM.put(check_address, default_check); 
-        Serial.println(check_address);
     }
     eeprom_write_address = sizeof(system_settings);
-    Serial.print(" done");
+    Serial.println(" done");
 }
