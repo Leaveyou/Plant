@@ -1,116 +1,127 @@
+
+
 #include <LowPower.h>
 #include <Wire.h>
-#include <ds3231.h>
+#include <DS3231.h>
+#include <EEPROM.h>
 
-#define BUFF_MAX 256
+#define BUFF_MAX 2560
+
+
 
 #define HOUR_INTERVAL 0
 #define MINUTE_INTERVAL 0
-#define SECOND_INTERVAL 5
+#define SECOND_INTERVAL 10
 
 const byte interruptPin = 2;
 volatile byte state = LOW;
 int awakePin = 13;
-struct ts t;
+long lastCheck = 0;
 
-typedef struct time_interval {
-    uint8_t hours;
-    uint8_t minutes;
-    uint8_t seconds;
-} time_interval;
+RTClib myRTC;
 
+#define UNIX_INTERVAL (HOUR_INTERVAL * 3600 + MINUTE_INTERVAL * 60 + SECOND_INTERVAL)
 
-void setup() {
-    Serial.begin(9600);
+// to do: customizable time interval / water pump
+// todo: implementeaza scriere in bucla round-robin pe eeprom pt protectie și pentru log anterior (max 100.000 scrieri până e kaput)
+// todo: implementeaza afisaj pe ecran
+// implementeaza buton scos din sleep cu encoder de rotatie
+// alarmă pt "nu pare sa se fi udat planta cand trebuia" - scrie eroare pe eeprom si afiseaza la apasare buton
+
+void setup() 
+{
+    Serial.begin(115200);    
     pinMode(awakePin, OUTPUT);
+    power_peripherials();
     pinMode(interruptPin, INPUT_PULLUP);
     Wire.begin();
-    DS3231_init(DS3231_CONTROL_INTCN);
-    attachInterrupt(digitalPinToInterrupt(interruptPin), blink, CHANGE);
-    //interrupt_routine();  // delete me
-}
 
-void interrupt_routine() {
-    DS3231_get(&t);
-    time_interval timeInterval;
-    timeInterval.hours = HOUR_INTERVAL;
-    timeInterval.minutes = MINUTE_INTERVAL;
-    timeInterval.seconds = SECOND_INTERVAL;
-    set_timer(timeInterval);
+
+//    for(int i = 0; i<512; i++) {
+//      EEPROM.write(i, 0);
+//    }
+
 }
 
 void loop() {
-    digitalWrite(awakePin, HIGH);
-    delay(100);
-    if (digitalRead(interruptPin) == LOW) {
-        Serial.println("Alarm is ringing.");
-        interrupt_routine();
-    } else {
-        Serial.println("Arduino has rebooted");
+  
+    uint32_t current_time = get_time();
+
+    long last_check = getLastCheck();
+
+    long time_since_check = current_time - last_check;
+delay(5000);
+
+
+    if (time_since_check < UNIX_INTERVAL)
+    {
+      unpower_peripherials();
+      nipsleep(UNIX_INTERVAL - time_since_check, 0, 0);
+      power_peripherials();
     }
-
-    // todo: sqw needs external pull-up resistor. This means no alarm can function without external power. DS3231_triggered_a1 might be enough. TBD
-    char buff[BUFF_MAX];
-    DS3231_get_a1(&buff[0], 59);
-    if (buff[0] == 0x00 || DS3231_triggered_a1()) {
-        Serial.println("No  alarm set. Setting a new one");
-        interrupt_routine();
-
-    } else {
-        Serial.println("Alarm already set.");
-    }
-
-    delay(100);
-    digitalWrite(awakePin, LOW);
-    LowPower.powerDown(SLEEP_FOREVER, ADC_OFF, BOD_OFF);
-
+       
+    check();
 }
 
-void set_timer(time_interval timeInterval)
+void nipsleep(long seconds, long minutes, long hours)
 {
-    struct ts t;
+  // todo: treat interrupt pin. Currently it interrupts at most a 8s sleep cycle; perhaps intended
+  unsigned long total_seconds = 0;
+  total_seconds += seconds;
+  total_seconds += minutes*60;
+  total_seconds += hours*3600;
 
-    DS3231_get(&t);
-
-    // calculate the hour and minute when the next alarm will be triggered
-
-    unsigned char wakeup_second = t.sec + timeInterval.seconds;
-    unsigned char wakeup_minute = t.min + timeInterval.minutes;
-    unsigned char wakeup_hour = t.hour + timeInterval.hours;
-
-    if (wakeup_second >= 60 ) {
-        wakeup_minute += wakeup_second / 60;
-        wakeup_second %=60;
-    }
-
-    if (wakeup_minute >= 60 ) {
-        wakeup_hour += wakeup_minute / 60;
-        wakeup_minute %=60;
-    }
-
-    if (wakeup_hour >= 60 ) {
-        wakeup_hour %= 24;
-    }
-
-    DS3231_clear_a1f();
-    DS3231_clear_a2f();
-
-    // flags define what calendar component to be checked against the current time in order
-    // to trigger the alarm
-    // (seconds) (0 to enable, 1 to disable)
-    // (minutes) (0 to enable, 1 to disable)
-    // (hour)    (0 to enable, 1 to disable)
-    // (day)     (0 to enable, 1 to disable)
-    // DY/DT          (dayofweek == 1/dayofmonth == 0)
-    uint8_t flags[5] = {0, 0, 0, 1, 1};
-    DS3231_set_a1(wakeup_second, wakeup_minute, wakeup_hour, 0, flags);
-
-    // activate Alarm2
-    DS3231_set_creg(DS3231_CONTROL_INTCN | DS3231_CONTROL_A1IE);
+  for (unsigned long cursor = 0; cursor < total_seconds/8; cursor++ ) {
+    LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_OFF);
+  }
+  for (unsigned long cursor = 0; cursor < total_seconds%8; cursor++ ) {
+    LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_OFF);
+  }
 }
 
+void check()
+{
+  // todo implement
+}
+
+long getLastCheck()
+{
+  if (!lastCheck)
+    EEPROM.get(0, lastCheck);
+
+  return lastCheck;
+}
+
+
+void power_peripherials()
+{
+  digitalWrite(awakePin, HIGH);
+  delay(1);
+}
+
+void unpower_peripherials()
+{
+  digitalWrite(awakePin, LOW);
+  delay(1);
+}
+
+uint32_t get_time() 
+{
+  DateTime now = myRTC.now();
+
+Serial.println(now.month());
+  
+  return now.unixtime();
+}
+
+//void debugTime(DateTime some_time) 
+//{
+//    char a[BUFF_MAX];
+//    snprintf(a, BUFF_MAX, "%d.%02d.%02d %02d:%02d:%02d - %ld", 
+//      some_time.year, some_time.mon, some_time.mday, some_time.hour, some_time.min, some_time.sec, some_time.unixtime);
+//    Serial.println(a);
+//}
 
 void blink() {
     // do nothing. Just wakes up arduino
 }
-
